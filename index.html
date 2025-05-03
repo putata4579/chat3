@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>실시간 잡담 탐지기</title>
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f2f2f2;
+        }
+        h1 {
+            margin-top: 40px;
+            font-size: 2em;
+        }
+        #status {
+            font-size: 1.8em;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        #status-image {
+            width: 90vw;
+            max-width: 900px;
+            height: auto;
+            border-radius: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <h1>🎤 실시간 잡담 탐지기</h1>
+    <p id="status">모델을 불러오는 중입니다...</p>
+    <img id="status-image" src="quiet.jpg" alt="상태 이미지">
+
+    <!-- 필수 라이브러리 -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands"></script>
+
+    <script type="text/javascript">
+        const URL = "https://teachablemachine.withgoogle.com/models/zvC-4aSDG/";
+        let recognizer;
+        let chatterHistory = [];
+        let lastWarningTime = 0;
+
+        // 모델 생성 함수
+        async function createModel() {
+            const checkpointURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
+
+            console.log("🔗 모델 주소 확인:", checkpointURL, metadataURL);
+
+            recognizer = speechCommands.create(
+                "BROWSER_FFT",
+                undefined,
+                checkpointURL,
+                metadataURL
+            );
+
+            await recognizer.ensureModelLoaded();
+            console.log("📥 모델 로드 성공");
+
+            return recognizer;
+        }
+
+        // 모델 로딩 후 초기화 함수
+        async function init() {
+            console.log("📦 모델 생성 중...");
+            recognizer = await createModel();
+            document.getElementById("status").innerText = "✅ 모델 로딩 완료! 감지 중...";
+            listen();
+        }
+
+        // 감지 함수
+        function listen() {
+            recognizer.listen(result => {
+                const scores = result.scores;
+                const labels = recognizer.wordLabels();
+                const prediction = labels[scores.indexOf(Math.max(...scores))];
+                const confidence = Math.max(...scores);
+
+                // 잡담 감지 여부 기록
+                const isChatter = (prediction === "잡담" && confidence > 0.85) ? 1 : 0;
+                chatterHistory.push(isChatter);
+                if (chatterHistory.length > 10) {
+                    chatterHistory.shift();
+                }
+
+                const totalChatter = chatterHistory.reduce((a, b) => a + b, 0);
+                const now = Date.now();
+                const statusText = document.getElementById("status");
+                const statusImage = document.getElementById("status-image");
+
+                // 잡담 3초 이상 감지되면 경고 상태로 전환
+                if (totalChatter >= 6) {
+                    lastWarningTime = now;
+                    statusText.innerText = "⚠️ 잡담 지속 감지됨!";
+                    statusImage.src = "warning.jpg";
+                    document.body.style.backgroundColor = "#fff3f3";
+                } else {
+                    // 경고 발생 후 2초 이내면 경고 유지
+                    if (now - lastWarningTime < 2000) {
+                        statusText.innerText = "⚠️ 잡담 지속 감지됨!";
+                        statusImage.src = "warning.jpg";
+                        document.body.style.backgroundColor = "#fff3f3";
+                    } else {
+                        // 2초 지나면 정상 상태로 전환
+                        statusText.innerText = "🔇 정상 상태 (조용함)";
+                        statusImage.src = "quiet.jpg";
+                        document.body.style.backgroundColor = "#f2f2f2";
+                    }
+                }
+            }, {
+                includeSpectrogram: true,
+                probabilityThreshold: 0.75,
+                overlapFactor: 0.5
+            });
+        }
+
+        // 초기화 실행
+        init();
+    </script>
+</body>
+</html>
